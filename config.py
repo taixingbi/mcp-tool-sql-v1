@@ -1,5 +1,7 @@
 """Configuration and environment settings."""
 import os
+from typing import Any, Dict
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -43,3 +45,18 @@ class Settings:
 
 
 settings = Settings()
+
+
+# ----------------------------
+# LangSmith config
+# ----------------------------
+def _langsmith_config() -> dict:
+    tags = []
+    if getattr(settings, "app_version", None):
+        tags.append(f"app_version:{settings.app_version}")
+    if getattr(settings, "mcp_name", None):
+        tags.append(f"mcp_name:{settings.mcp_name}")
+    out: Dict[str, Any] = {}
+    if tags:
+        out["tags"] = tags
+    return out
