@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_community.agent_toolkits import SQLDatabaseToolkit
 from langchain_community.agent_toolkits.sql.base import create_sql_agent
 
-from config import settings
+from config import settings, _langsmith_config
 from db import get_database
 
 # Global agent instance (singleton)
@@ -73,5 +73,8 @@ def answer_question(question: str) -> str:
     """Run SQL agent on a question and return the answer."""
     agent = get_agent()
     user_msg = f"{question}\n(Use LIMIT <= {settings.default_limit}.)"
-    result = agent.invoke({"input": user_msg})
+    result = agent.invoke(
+        {"input": user_msg},
+        config=_langsmith_config(),
+    )
     return (result.get("output") or "").strip()
