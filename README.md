@@ -9,7 +9,8 @@ MCP server that exposes a LangChain SQL agent as a tool. Query MySQL using natur
 <!-- Install deps and run server; .env holds OpenAI + MySQL credentials. -->
 
 ```bash
-python3.11 -m venv venv && source venv/bin/activate
+python3.11 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 ```
 
