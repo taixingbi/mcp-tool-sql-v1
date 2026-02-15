@@ -1,12 +1,8 @@
 # mcp-tool-sql
 
-<!-- MCP server: one tool (sql_agent) that answers natural-language questions by running SQL via LangChain + OpenAI on MySQL. -->
-
-MCP server that exposes a LangChain SQL agent as a tool. Query MySQL using natural language.
+MCP server exposing **sql_query**: deterministic SQL tool (contract-first, no LLM SQL). Accepts SQLRequest JSON, returns SQLResponse (query, rows, metadata).
 
 ## Quick start
-
-<!-- Install deps and run server; .env holds OpenAI + MySQL credentials. -->
 
 ```bash
 python3.11 -m venv venv
@@ -15,16 +11,18 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-Create `.env` with `OPENAI_API_KEY`, `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`.
+Create `.env` with `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`.
 
 ```bash
 uvicorn main:app --reload --port 8000
 ```
 
-**Health:** `curl http://localhost:8000/health`
+**Health:**
+```bash
+curl http://localhost:8000/health
+```
 
-<!-- JSON-RPC tools/call with args.question; no trailing commas in JSON. -->
-**Call tool:**
+**Call tool (sql_query):**
 ```bash
 curl -N -sS "http://localhost:8000/mcp/" \
 -H "Content-Type: application/json" \
@@ -34,37 +32,67 @@ curl -N -sS "http://localhost:8000/mcp/" \
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "sql_agent",
+    "name": "sql_query",
     "arguments": {
       "args": {
-          "question": "List 5 job titles in Ventura",
-          "request_id": "12345678",
-          "session_id": "123456"
+        "request": {
+          "version": "v1",
+          "dataset": "gov_jobs",
+          "metrics": [{"name": "amount", "agg": "avg"}],
+          "dimensions": ["jurisdiction", "title"],
+          "filters": { "location": ["ventura"] },
+          "limit": 50,
+          "order_by": [{"field": "avg_amount", "dir": "desc"}]
+        },
+        "request_id": "12345678",
+        "session_id": "123456"
       }
     }
   }
 }'
 ```
 
-Response shape: `{ "data": { "question", "answer" }, "metadata": { "version" }, "error": null }`.
+Response: `{ "data": SQLResponse (ok, query, columns, rows, row_count, elapsed_ms, warnings, fingerprint), "metadata": {...}, "error": null }`.
+
+---
+
+## Architecture (production)
+
+Best-practice layering:
+
+| Layer | Role |
+|-------|------|
+| **Orchestrator** (client/separate service) | Intent extraction (LLM) → SQLRequest JSON → call **sql_query** → explain + cite from rows |
+| **sql_query** (MCP tool) | Validate request → build SQL from whitelist (no LLM) → execute with guardrails → return SQLResponse |
+
+Pipeline:
+```
+Question → (Orchestrator) Intent → SQLRequest
+    → (sql_query) validate → build SQL → execute → SQLResponse
+    → (Orchestrator) explain + cite query/rows
+```
+
+- **SQLRequest** (input): `version`, `dataset`, `metrics` (name + agg), `dimensions`, `filters`, `limit`, `order_by`. Pydantic schema in `schemas.py`.
+- **SQLResponse** (output): `ok`, `request_id`, `query`, `params`, `columns`, `rows`, `row_count`, `elapsed_ms`, `warnings`, `fingerprint`.
+- **Guardrails**: SELECT-only, whitelisted tables/columns, LIMIT cap, timeout, parameterized queries only. Config: `sql_max_limit`, `sql_timeout_sec`, `sql_max_group_by`, `sql_max_filters`.
 
 ---
 
 ## Design
 
-<!-- Request path: client → FastAPI /mcp → MCP sql_agent → agent.answer_question → LangChain agent + MySQL. -->
-
 ```
-Client (curl/IDE)  →  POST /mcp/ (JSON-RPC tools/call)  →  sql_agent(question)
-       →  LangChain SQL Agent  →  ChatOpenAI  →  MySQL  →  answer
+Client  →  POST /mcp/ (tools/call)  →  sql_query(SQLRequest)
+       →  sql_runner.run_request()  →  MySQL
 ```
 
 | Layer | Role |
 |-------|------|
-| **main.py** | FastAPI app, MCP at `/mcp`, `sql_agent` tool, `/health` |
-| **agent.py** | LangChain SQL agent, `answer_question(question)` |
-| **db.py** | MySQL URI, `get_database()` (SQLDatabase) |
-| **config.py** | Settings from env (OpenAI, MySQL, app version, etc.) |
+| **main.py** | FastAPI, MCP at `/mcp`, `sql_query` tool, `/health` |
+| **schemas.py** | SQLRequest, SQLResponse (Pydantic) |
+| **sql_builder.py** | Deterministic SQL from SQLRequest (whitelist only) |
+| **sql_runner.py** | Execute with timeout, truncate, fingerprint → SQLResponse |
+| **db.py** | MySQL URI, `get_engine()` / `execute_query()` |
+| **config.py** | Settings + SQL guardrails (`sql_max_limit`, `sql_timeout_sec`, etc.) |
 
 ---
 
@@ -132,5 +160,5 @@ curl https://mcp-tool-sql-v1-dev.fly.dev/health
 curl -N -sS "https://mcp-tool-sql-v1-dev.fly.dev/mcp/" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sql_agent","arguments":{"args":{"question":"List 5 job titles in Ventura"}}}}'
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sql_query","arguments":{"args":{"request":{"version":"v1","dataset":"gov_jobs","metrics":[{"name":"amount","agg":"avg"}],"dimensions":["jurisdiction","title"],"limit":10}}}}}'
 ```

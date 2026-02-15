@@ -38,6 +38,12 @@ class Settings:
     allowed_tables = None  # None = all tables
     default_limit: int = 10
 
+    # SQL tool guardrails (hard enforcement)
+    sql_max_limit: int = 200
+    sql_timeout_sec: int = 2
+    sql_max_group_by: int = 4
+    sql_max_filters: int = 20
+
     def require_openai_api_key(self) -> str:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required")
