@@ -8,17 +8,10 @@ curl -N -sS "http://localhost:8000/mcp/" \
     "id": 1,
     "method": "tools/call",
     "params": {
-      "name": "sql_query",
+      "name": "sql_agent",
       "arguments": {
         "args": {
-          "request": {
-            "version": "v1",
-            "dataset": "gov_jobs",
-            "metrics": [{"name": "amount", "agg": "avg"}],
-            "dimensions": ["jurisdiction", "title"],
-            "filters": { "location": ["ventura"] },
-            "limit": 10
-          }
+          "question": "List 5 job titles in Ventura"
         }
       }
     }
@@ -33,16 +26,10 @@ curl -N -sS "http://localhost:8000/mcp/" \
     "id": 1,
     "method": "tools/call",
     "params": {
-      "name": "sql_query",
+      "name": "sql_agent",
       "arguments": {
         "args": {
-            "request": {
-              "version": "v1",
-              "dataset": "gov_jobs",
-              "metrics": [{"name": "amount", "agg": "avg"}],
-              "dimensions": ["jurisdiction", "title"],
-              "limit": 10
-            },
+            "question": "List 5 job titles in Ventura",
             "request_id": "12345678",
             "session_id": "123456"
         }
@@ -61,19 +48,28 @@ curl -N -sS "https://mcp-tool-sql-v1-dev.fly.dev/mcp/" \
   "id": 1,
   "method": "tools/call",
   "params": {
-    "name": "sql_query",
+    "name": "sql_agent",
     "arguments": {
       "args": {
-          "request": {
-            "version": "v1",
-            "dataset": "gov_jobs",
-            "metrics": [{"name": "amount", "agg": "avg"}],
-            "dimensions": ["jurisdiction", "title"],
-            "limit": 10
-          },
+          "question": "List 5 job titles in Ventura",
           "request_id": "12345678",
           "session_id": "123456"
       }
     }
   }
 }'
+
+
+
+
+
+{
+  "metadata": {
+    "everything else"
+  },
+  "error": null,
+  "data": {
+    "question": "...",
+    "answer": "..."
+  }
+}
