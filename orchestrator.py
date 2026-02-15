@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Optional
 
 from langchain_openai import ChatOpenAI
 
@@ -35,15 +36,31 @@ Rules:
 - Infer location from phrases like "in Ventura" → location ["ventura"], "San Bernardino" → ["sanbernardino"]."""
 
 
-def question_to_sql_request(question: str) -> SQLRequest:
+def question_to_sql_request(
+    question: str,
+    request_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> SQLRequest:
     """Convert natural language question to SQLRequest using LLM. Raises on parse/validation error."""
     llm = ChatOpenAI(
         model=settings.openai_model,
         temperature=0,
         api_key=settings.require_openai_api_key(),
     )
+    tags = [
+        t
+        for t in (
+            f"request_id:{request_id}" if request_id else None,
+            f"app_version:{settings.app_version}" if getattr(settings, "app_version", None) else None,
+            f"mcp_name:{settings.mcp_name}" if getattr(settings, "mcp_name", None) else None,
+            f"session_id:{session_id}" if session_id else None,
+        )
+        if t is not None
+    ]
+    config = {"run_name": settings.mcp_name, "tags": tags}
     response = llm.invoke(
-        [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": question}]
+        [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": question}],
+        config=config,
     )
     text = (response.content or "").strip()
     # Strip optional markdown code block

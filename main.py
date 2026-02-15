@@ -111,7 +111,12 @@ async def sql_agent(args: SqlAgentArgs) -> dict:
     question = args.question
 
     try:
-        req = await asyncio.to_thread(question_to_sql_request, args.question)
+        req = await asyncio.to_thread(
+            question_to_sql_request,
+            args.question,
+            request_id,
+            args.session_id,
+        )
         resp = await asyncio.to_thread(run_request, req, request_id)
         answer = _format_answer(resp.columns, resp.rows) if resp.ok else "No results."
         extra = {"version": settings.app_version, "request_id": request_id, **resp.model_dump()}
