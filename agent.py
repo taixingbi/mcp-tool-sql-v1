@@ -19,14 +19,14 @@ def get_llm() -> ChatOpenAI:
     )
 
 
-def build_sql_system_prompt(db_name: str) -> str:
+def build_sql_system_prompt(db_name: str, top_k: int = 5) -> str:
     """Build system prompt for SQL agent."""
     return f"""
 You are an agent designed to interact with a SQL database.
 Given an input question, create a syntactically correct {db_name} query to run,
 then look at the results of the query and return the answer. Unless the user
 specifies a specific number of examples they wish to obtain, always limit your
-query to at most {{top_k}} results.
+query to at most {top_k} results.
 
 You can order the results by a relevant column to return the most interesting
 examples in the database. Never query for all the columns from a specific table,
@@ -42,7 +42,7 @@ To start you should ALWAYS look at the tables in the database to see what you
 can query. Do NOT skip this step.
 
 Then you should query the schema of the most relevant tables.
-""".format(top_k=5)
+"""
 
 
 def get_agent():
@@ -69,12 +69,16 @@ def get_agent():
     return _AGENT
 
 
-def answer_question(question: str) -> str:
+def answer_question(
+    question: str,
+    request_id: int | str | None = None,
+    session_id: int | str | None = None,
+) -> str:
     """Run SQL agent on a question and return the answer."""
     agent = get_agent()
     user_msg = f"{question}\n(Use LIMIT <= {settings.default_limit}.)"
     result = agent.invoke(
         {"input": user_msg},
-        config=_langsmith_config(),
+        config=_langsmith_config(request_id, session_id),
     )
     return (result.get("output") or "").strip()

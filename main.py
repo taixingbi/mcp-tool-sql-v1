@@ -1,10 +1,12 @@
 """FastAPI + MCP server."""
+import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, Field
 
@@ -23,38 +25,45 @@ mcp = FastMCP(
 
 class SqlAgentArgs(BaseModel):
     question: str = Field(..., description="Natural language question")
+    request_id: Optional[str] = Field(None, description="Optional request id for tracing")
+    session_id: Optional[str] = Field(None, description="Optional session id for correlation")
+
+
+def _metadata(request_id: Optional[str], session_id: Optional[str]) -> dict:
+    return {
+        "version": settings.app_version,
+        "request_id": request_id,
+        "session_id": session_id,
+    }
 
 
 @mcp.tool()
-async def sql_agent(
-    args: SqlAgentArgs,
-    ctx: Optional[Context] = None,
-) -> dict:
+async def sql_agent(args: SqlAgentArgs) -> dict:
     """
     MCP tool: SQL agent that answers natural language questions using SQL.
 
     Response envelope:
     {
       data: { question, answer } | null,
-      metadata: { version },
+      metadata: { version, request_id, session_id },
       error: string | null
     }
     """
+    request_id = args.request_id or str(uuid.uuid4())
+    session_id = args.session_id
+    meta = _metadata(request_id, session_id)
 
     try:
         question = args.question
-        answer = answer_question(question)
-        return {
-            "data": {"question": question, "answer": answer},
-            "metadata": {"version": settings.app_version},
-            "error": None,
-        }
+        answer = await asyncio.to_thread(
+            answer_question,
+            question,
+            request_id=request_id,
+            session_id=session_id,
+        )
+        return {"data": {"question": question, "answer": answer}, "metadata": meta, "error": None}
     except Exception as e:
-        return {
-            "data": None,
-            "metadata": {"version": settings.app_version},
-            "error": f"{type(e).__name__}: {e}",
-        }
+        return {"data": None, "metadata": meta, "error": f"{type(e).__name__}: {e}"}
 
 
 @asynccontextmanager

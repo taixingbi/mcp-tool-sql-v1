@@ -11,6 +11,7 @@ MCP server that exposes a LangChain SQL agent as a tool. Query MySQL using natur
 ```bash
 python3.11 -m venv venv
 source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -26,9 +27,23 @@ uvicorn main:app --reload --port 8000
 **Call tool:**
 ```bash
 curl -N -sS "http://localhost:8000/mcp/" \
-  -H "Content-Type: application/json" \
-  -H "Accept: application/json, text/event-stream" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"sql_agent","arguments":{"args":{"question":"List 5 job titles in Ventura"}}}}'
+-H "Content-Type: application/json" \
+-H "Accept: application/json, text/event-stream" \
+-d '{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "sql_agent",
+    "arguments": {
+      "args": {
+          "question": "List 5 job titles in Ventura",
+          "request_id": "12345678",
+          "session_id": "123456"
+      }
+    }
+  }
+}'
 ```
 
 Response shape: `{ "data": { "question", "answer" }, "metadata": { "version" }, "error": null }`.
