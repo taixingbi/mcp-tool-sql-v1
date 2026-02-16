@@ -34,11 +34,9 @@ curl -N -sS "http://localhost:8000/mcp/" \
     "params": {
       "name": "sql_agent",
       "arguments": {
-        "args": {
-            "question": "List 5 job titles in Ventura",
-            "request_id": "12345678",
-            "session_id": "123456"
-        }
+          "question": "List 5 job titles in Ventura",
+          "request_id": "12345678",
+          "session_id": "123456"
       }
     }
   }'
@@ -159,11 +157,9 @@ curl -N -sS "https://mcp-tool-sql-v1-dev.fly.dev/mcp/" \
     "params": {
       "name": "sql_agent",
       "arguments": {
-        "args": {
-            "question": "List 5 job titles in Ventura",
-            "request_id": "12345678",
-            "session_id": "123456"
-        }
+          "question": "List 5 job titles in Ventura",
+          "request_id": "12345678",
+          "session_id": "123456"
       }
     }
   }'
