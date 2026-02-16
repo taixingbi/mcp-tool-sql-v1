@@ -1,6 +1,6 @@
 """Configuration and environment settings."""
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
@@ -38,6 +38,12 @@ class Settings:
     allowed_tables = None  # None = all tables
     default_limit: int = 10
 
+    # SQL tool guardrails (hard enforcement)
+    sql_max_limit: int = 200
+    sql_timeout_sec: int = 2
+    sql_max_group_by: int = 4
+    sql_max_filters: int = 20
+
     def require_openai_api_key(self) -> str:
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required")
@@ -50,13 +56,25 @@ settings = Settings()
 # ----------------------------
 # LangSmith config
 # ----------------------------
-def _langsmith_config() -> dict:
-    tags = []
-    if getattr(settings, "app_version", None):
-        tags.append(f"app_version:{settings.app_version}")
-    if getattr(settings, "mcp_name", None):
-        tags.append(f"mcp_name:{settings.mcp_name}")
+def _langsmith_config(
+    request_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> dict:
+    tags = [
+        t
+        for t in (
+            f"app_version:{settings.app_version}" if getattr(settings, "app_version", None) else None,
+            f"mcp_name:{settings.mcp_name}" if getattr(settings, "mcp_name", None) else None,
+            f"request_id:{request_id}" if request_id is not None else None,
+            f"session_id:{session_id}" if session_id is not None else None,
+        )
+        if t is not None
+    ]
+    metadata = {k: v for k, v in (("request_id", request_id), ("session_id", session_id)) if v is not None}
     out: Dict[str, Any] = {}
+    out["run_name"] = settings.mcp_name
     if tags:
         out["tags"] = tags
+    if metadata:
+        out["metadata"] = metadata
     return out

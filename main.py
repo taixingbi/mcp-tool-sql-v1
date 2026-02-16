@@ -1,15 +1,18 @@
-"""FastAPI + MCP server."""
+"""FastAPI + MCP server. Exposes sql_agent: natural language → LLM intent → deterministic SQL."""
+import asyncio
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from agent import answer_question
 from config import settings
+from orchestrator import question_to_sql_request
+from sql_runner import run_request
 
 mcp = FastMCP(
     settings.mcp_name,
@@ -21,40 +24,69 @@ mcp = FastMCP(
 )
 
 
-class SqlAgentArgs(BaseModel):
-    question: str = Field(..., description="Natural language question")
+def _format_answer(columns: list, rows: list[list]) -> str:
+    """Format columns and rows as a short text answer."""
+    if not rows:
+        return "No results found."
+    lines = []
+    for i, row in enumerate(rows[:20], 1):
+        parts = [f"{col}={row[j]}" for j, col in enumerate(columns)]
+        lines.append(f"{i}. " + ", ".join(parts))
+    if len(rows) > 20:
+        lines.append(f"... and {len(rows) - 20} more.")
+    return "\n".join(lines)
+
+
+def _envelope(
+    question: str,
+    answer: str,
+    sql: str | None,
+    metadata_extra: dict,
+    error: str | None = None,
+) -> dict:
+    """Response envelope: metadata (everything else), error, data (question, answer)."""
+    metadata = {"sql": sql or "", **metadata_extra}
+    return {
+        "metadata": metadata,
+        "error": error,
+        "data": {"question": question, "answer": answer} if error is None else None,
+    }
+
+
+def _metadata(sql: str | None = None) -> dict:
+    return {"sql": sql or ""}
+
+
+# ---------------------------------------------------------------------------
+# sql_agent: question → LLM intent → SQLRequest → run_request
+# ---------------------------------------------------------------------------
 
 
 @mcp.tool()
 async def sql_agent(
-    args: SqlAgentArgs,
-    ctx: Optional[Context] = None,
+    question: str = Field(..., description="Natural language question (e.g. List 5 job titles in Ventura)"),
+    request_id: Optional[str] = Field(None, description="Optional request id for tracing"),
+    session_id: Optional[str] = Field(None, description="Optional session id for correlation"),
 ) -> dict:
     """
-    MCP tool: SQL agent that answers natural language questions using SQL.
-
-    Response envelope:
-    {
-      data: { question, answer } | null,
-      metadata: { version },
-      error: string | null
-    }
+    MCP tool: natural language question → LLM intent (SQLRequest) → deterministic SQL.
+    Input must include "question". Response: { metadata: { sql, ... }, error: null, data: { question, answer } }
     """
+    request_id = request_id or str(uuid.uuid4())
 
     try:
-        question = args.question
-        answer = answer_question(question)
-        return {
-            "data": {"question": question, "answer": answer},
-            "metadata": {"version": settings.app_version},
-            "error": None,
-        }
+        req = await asyncio.to_thread(
+            question_to_sql_request,
+            question,
+            request_id,
+            session_id,
+        )
+        resp = await asyncio.to_thread(run_request, req, request_id)
+        answer = _format_answer(resp.columns, resp.rows) if resp.ok else "No results."
+        extra = {"version": settings.app_version, "request_id": request_id, **resp.model_dump()}
+        return _envelope(question, answer, resp.query, extra, error=None)
     except Exception as e:
-        return {
-            "data": None,
-            "metadata": {"version": settings.app_version},
-            "error": f"{type(e).__name__}: {e}",
-        }
+        return _envelope(question, "", None, {"version": settings.app_version, "request_id": request_id}, error=f"{type(e).__name__}: {e}")
 
 
 @asynccontextmanager
