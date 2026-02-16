@@ -1,4 +1,4 @@
-"""FastAPI + MCP server. Production: deterministic sql_query tool (contract-first, no LLM SQL)."""
+"""FastAPI + MCP server. Exposes sql_agent: natural language → LLM intent → deterministic SQL."""
 import asyncio
 import uuid
 from contextlib import asynccontextmanager
@@ -8,11 +8,10 @@ from fastapi import FastAPI
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from config import settings
 from orchestrator import question_to_sql_request
-from schemas import SQLRequest
 from sql_runner import run_request
 
 mcp = FastMCP(
@@ -59,63 +58,28 @@ def _metadata(sql: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Production: deterministic SQL tool (contract-first, no LLM SQL)
+# sql_agent: question → LLM intent → SQLRequest → run_request
 # ---------------------------------------------------------------------------
-
-
-class SqlQueryArgs(BaseModel):
-    """Input for sql_query: structured SQLRequest from orchestrator."""
-    request: dict = Field(..., description="SQLRequest JSON: dataset, metrics, dimensions, filters, limit, order_by")
-    request_id: Optional[str] = Field(None, description="Optional request id for tracing")
-    session_id: Optional[str] = Field(None, description="Optional session id for correlation")
 
 
 @mcp.tool()
-async def sql_query(args: SqlQueryArgs) -> dict:
-    """
-    MCP tool: deterministic SQL. Accepts SQLRequest (structured intent), builds parameterized
-    SELECT from whitelist, executes with guardrails.
-    Response: { metadata: { sql, ... }, error: null, data: { question, answer } }
-    """
-    request_id = args.request_id or str(uuid.uuid4())
-    question = f"Structured query: dataset={args.request.get('dataset', '')}"
-
-    try:
-        req = SQLRequest.model_validate(args.request)
-        resp = await asyncio.to_thread(run_request, req, request_id)
-        answer = _format_answer(resp.columns, resp.rows) if resp.ok else "No results."
-        extra = {"version": settings.app_version, "request_id": request_id, **resp.model_dump()}
-        return _envelope(question, answer, resp.query, extra, error=None)
-    except Exception as e:
-        return _envelope(question, "", None, {"version": settings.app_version, "request_id": request_id}, error=f"{type(e).__name__}: {e}")
-
-
-# ---------------------------------------------------------------------------
-# sql_agent: question → LLM intent → SQLRequest → run_request (same envelope)
-# ---------------------------------------------------------------------------
-
-
-class SqlAgentArgs(BaseModel):
-    question: str = Field(..., description="Natural language question (e.g. List 5 job titles in Ventura)")
-    request_id: Optional[str] = Field(None, description="Optional request id for tracing")
-    session_id: Optional[str] = Field(None, description="Optional session id for correlation")
-
-
-@mcp.tool()
-async def sql_agent(args: SqlAgentArgs) -> dict:
+async def sql_agent(
+    question: str = Field(..., description="Natural language question (e.g. List 5 job titles in Ventura)"),
+    request_id: Optional[str] = Field(None, description="Optional request id for tracing"),
+    session_id: Optional[str] = Field(None, description="Optional session id for correlation"),
+) -> dict:
     """
     MCP tool: natural language question → LLM intent (SQLRequest) → deterministic SQL.
     Input must include "question". Response: { metadata: { sql, ... }, error: null, data: { question, answer } }
     """
-    request_id = args.request_id or str(uuid.uuid4())
-    question = args.question
+    request_id = request_id or str(uuid.uuid4())
 
     try:
         req = await asyncio.to_thread(
             question_to_sql_request,
-            args.question,
+            question,
             request_id,
-            args.session_id,
+            session_id,
         )
         resp = await asyncio.to_thread(run_request, req, request_id)
         answer = _format_answer(resp.columns, resp.rows) if resp.ok else "No results."
