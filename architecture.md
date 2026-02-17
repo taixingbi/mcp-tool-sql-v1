@@ -116,7 +116,7 @@ This separation enables:
 
 ---
 
-## (Optional) Mental Model
+## Simplified Sequence Diagram
 
 ```
 User Question
